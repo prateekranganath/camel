@@ -16,7 +16,9 @@
  */
 package org.apache.camel.component.aws2.athena;
 
+import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Queue;
 
 import software.amazon.awssdk.core.exception.SdkException;
@@ -45,6 +47,7 @@ public class AmazonAthenaClientMock implements AthenaClient {
 
     private Queue<String> startQueryExecutionResults = new LinkedList<>();
     private Queue<QueryExecution> getQueryExecutionResults = new LinkedList<>();
+    private final List<StartQueryExecutionRequest> startQueryExecutionRequests = new ArrayList<>();
 
     /**
      * Optionally provide a FIFO queue of results in the order they should be returned for each call to
@@ -64,6 +67,10 @@ public class AmazonAthenaClientMock implements AthenaClient {
      */
     public void setGetQueryExecutionResults(LinkedList<QueryExecution> getQueryExecutionResults) {
         this.getQueryExecutionResults = getQueryExecutionResults;
+    }
+
+    public List<StartQueryExecutionRequest> getStartQueryExecutionRequests() {
+        return startQueryExecutionRequests;
     }
 
     @Override
@@ -104,6 +111,7 @@ public class AmazonAthenaClientMock implements AthenaClient {
     @Override
     public StartQueryExecutionResponse startQueryExecution(StartQueryExecutionRequest startQueryExecutionRequest)
             throws SdkException {
+        startQueryExecutionRequests.add(startQueryExecutionRequest);
         String defaultResult = "11111111-1111-1111-1111-111111111111";
         String result = startQueryExecutionResults.isEmpty() ? defaultResult : startQueryExecutionResults.poll();
 

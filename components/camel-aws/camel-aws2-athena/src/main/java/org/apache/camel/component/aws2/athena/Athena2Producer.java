@@ -62,6 +62,18 @@ public class Athena2Producer extends DefaultProducer {
         return exchange.getMessage();
     }
 
+    /**
+     * Sets the output location of an executed query as a response header, and remembers it so that
+     * {@link #determineOutputLocation(Exchange)} does not mistake it for a user supplied override.
+     */
+    private void setOutputLocationResult(Message message, GetQueryExecutionResponse response) {
+        String outputLocation = null;
+        if (response != null && response.queryExecution() != null && response.queryExecution().resultConfiguration() != null) {
+            outputLocation = response.queryExecution().resultConfiguration().outputLocation();
+        }
+        message.setHeader(Athena2Constants.OUTPUT_LOCATION, outputLocation);
+    }
+
     @Override
     public void process(Exchange exchange) throws Exception {
         Athena2Operations operation = determineOperation(exchange);
@@ -103,8 +115,7 @@ public class Athena2Producer extends DefaultProducer {
         Message message = getMessageForResponse(exchange);
         message.setHeader(Athena2Constants.QUERY_EXECUTION_ID, getQueryExecutionResponse.queryExecution().queryExecutionId());
         message.setHeader(Athena2Constants.QUERY_EXECUTION_STATE, getQueryExecutionResponse.queryExecution().status().state());
-        message.setHeader(Athena2Constants.OUTPUT_LOCATION,
-                getQueryExecutionResponse.queryExecution().resultConfiguration().outputLocation());
+        setOutputLocationResult(message, getQueryExecutionResponse);
         message.setBody(getQueryExecutionResponse);
     }
 
@@ -137,11 +148,9 @@ public class Athena2Producer extends DefaultProducer {
             message.setBody(response);
         } else if (outputType == Athena2OutputType.S3Pointer) {
             GetQueryExecutionResponse response = doGetQueryExecution(queryExecutionId, athenaClient);
-            String outputLocation = response.queryExecution().resultConfiguration().outputLocation();
             message.setHeader(Athena2Constants.QUERY_EXECUTION_STATE, response.queryExecution().status().state());
-            message.setHeader(Athena2Constants.OUTPUT_LOCATION,
-                    response.queryExecution().resultConfiguration().outputLocation());
-            message.setBody(outputLocation);
+            setOutputLocationResult(message, response);
+            message.setBody(message.getHeader(Athena2Constants.OUTPUT_LOCATION, String.class));
         } else {
             throw new IllegalArgumentException(
                     "AWS Athena output type [" + outputType + "] is not supported.  Must be "
@@ -220,8 +229,7 @@ public class Athena2Producer extends DefaultProducer {
         message.setHeader(Athena2Constants.QUERY_EXECUTION_ID, queryExecutionId);
         message.setHeader(Athena2Constants.QUERY_EXECUTION_STATE, getQueryExecutionResponse == null
                 ? null : getQueryExecutionResponse.queryExecution().status().state());
-        message.setHeader(Athena2Constants.OUTPUT_LOCATION, getQueryExecutionResponse == null
-                ? null : getQueryExecutionResponse.queryExecution().resultConfiguration().outputLocation());
+        setOutputLocationResult(message, getQueryExecutionResponse);
 
         message.setHeader(Athena2Constants.START_QUERY_EXECUTION_ATTEMPTS, athena2QueryHelper.getAttempts());
         message.setHeader(Athena2Constants.START_QUERY_EXECUTION_ELAPSED_MILLIS, athena2QueryHelper.getElapsedMillis());
@@ -382,12 +390,17 @@ public class Athena2Producer extends DefaultProducer {
     }
 
     private String determineOutputLocation(final Exchange exchange) {
-        return getRequiredHeader(
-                exchange,
-                Athena2Constants.OUTPUT_LOCATION,
-                String.class,
-                () -> getConfiguration().getOutputLocation(),
-                "AWS Athena output location is required.");
+        String outputLocation = exchange.getIn().getHeader(Athena2Constants.OUTPUT_LOCATION_OVERRIDE, String.class);
+
+        if (ObjectHelper.isEmpty(outputLocation)) {
+            outputLocation = getConfiguration().getOutputLocation();
+        }
+
+        if (ObjectHelper.isEmpty(outputLocation)) {
+            throw new IllegalArgumentException("AWS Athena output location is required.");
+        }
+
+        return outputLocation;
     }
 
     private String determineWorkGroup(final Exchange exchange) {
